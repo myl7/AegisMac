@@ -8,7 +8,7 @@ import Security
 /// biometric vault slot is needed. If anything fails (no Secure Enclave / no biometrics / user
 /// cancels), the caller falls back to typing the password. macOS-only convenience.
 enum KeychainHelper {
-    static let service = "com.beemdevelopment.aegismac"
+    static let service = "dev.myl.aegismac"
     static let account = "vault-unlock-secret"
 
     /// Whether Touch ID (or Watch/other biometrics) is available on this Mac.

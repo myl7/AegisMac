@@ -9,7 +9,7 @@ db version 3): a vault exported on Android must unlock and import here, and vice
 
 ## Ground rules (all agents)
 
-- SPM package at `macos/`, single executable target `AegisMac`, macOS 14+, Swift 5 mode.
+- SPM package at repo root, single executable target `AegisMac`, macOS 14+, Swift 5 mode.
 - Dependencies: **CryptoSwift** (scrypt ONLY). Everything else uses system frameworks:
   CryptoKit (AES-GCM, HMAC, SHA), Vision (QR detect), ScreenCaptureKit, LocalAuthentication.
 - JSON: use `JSONSerialization` + `[String: Any]` (`JSONObject` alias), NOT Codable —
@@ -23,14 +23,14 @@ db version 3): a vault exported on Android must unlock and import here, and vice
 - Syntax-check your own files with `xcrun swiftc -parse <your files>`. Full builds are
   the integrator's job (wave agents may run `swift build`, but don't fight over fixing
   other modules' errors — report them instead).
-- Specs are authoritative: `macos/docs/porting-specs/*.md`
+- Specs are authoritative: `docs/porting-specs/*.md`
   (vault-crypto, otp-algorithms, model-store, ui-style, import-export). When a spec cites
   a constant or algorithm, reproduce it EXACTLY. The Android source at
   `/Users/myl/app/Aegis/app/src/main/java/...` is available for cross-checking.
 
 ## File ownership
 
-| Module | Owner | Files (under `macos/`) |
+| Module | Owner | Files (repo-relative) |
 |---|---|---|
 | Support | (pre-written) | `Sources/AegisMac/Support/Errors.swift` |
 | Encoding+Crypto | agent **core-crypto** | `Sources/AegisMac/Encoding/{Base32,Hex}.swift`, `Sources/AegisMac/Crypto/{CryptoUtils,CryptParameters,ScryptParameters,MasterKey,Slots}.swift`, `Tests/AegisMacTests/CryptoTests.swift` |
