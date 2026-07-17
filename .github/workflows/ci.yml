@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test-package:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: swift build
+
+      - name: Test
+        run: swift test
+
+      - name: Package DMG
+        run: ./scripts/package.sh
+
+      # Short retention: these are throwaway CI builds. Release DMGs are
+      # attached to GitHub Releases (permanent, no storage quota) instead.
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AegisMac-dmg
+          path: dist/*.dmg
+          retention-days: 7
+          if-no-files-found: error
