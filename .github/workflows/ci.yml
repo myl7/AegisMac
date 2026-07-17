@@ -13,7 +13,7 @@ jobs:
   build-test-package:
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build
         run: swift build
@@ -27,7 +27,7 @@ jobs:
       # Short retention: these are throwaway CI builds. Release DMGs are
       # attached to GitHub Releases (permanent, no storage quota) instead.
       - name: Upload DMG artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: AegisMac-dmg
           path: dist/*.dmg
