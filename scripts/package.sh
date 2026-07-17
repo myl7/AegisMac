@@ -24,7 +24,7 @@ cat > "$APP/Contents/Info.plist" <<EOF
     <key>CFBundleExecutable</key>
     <string>AegisMac</string>
     <key>CFBundleIdentifier</key>
-    <string>dev.myl.aegismac</string>
+    <string>org.myl7.aegis-mac</string>
     <key>CFBundleName</key>
     <string>Aegis</string>
     <key>CFBundleDisplayName</key>
