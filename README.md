@@ -32,6 +32,8 @@ Download the DMG from [Releases](https://github.com/myl7/AegisMac/releases) and 
 xattr -d com.apple.quarantine /Applications/AegisMac.app
 ```
 
+Each release ships a `SHA256SUMS.txt` you can verify the DMG against: `shasum -a 256 -c SHA256SUMS.txt`.
+
 ## Build from source
 
 ```sh

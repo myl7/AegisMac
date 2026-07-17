@@ -13,9 +13,10 @@ swift build -c release
 
 APP=dist/AegisMac.app
 /bin/rm -rf dist
-mkdir -p "$APP/Contents/MacOS"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 cp .build/release/AegisMac "$APP/Contents/MacOS/AegisMac"
+cp assets/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 cat > "$APP/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -26,9 +27,11 @@ cat > "$APP/Contents/Info.plist" <<EOF
     <key>CFBundleIdentifier</key>
     <string>org.myl7.aegis-mac</string>
     <key>CFBundleName</key>
-    <string>Aegis</string>
+    <string>AegisMac</string>
     <key>CFBundleDisplayName</key>
-    <string>Aegis</string>
+    <string>AegisMac</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -50,7 +53,7 @@ codesign --force --deep --sign - "$APP"
 mkdir -p dist/dmg-root
 cp -R "$APP" dist/dmg-root/
 ln -s /Applications dist/dmg-root/Applications
-hdiutil create -volname "Aegis" -srcfolder dist/dmg-root -ov -format UDZO "dist/AegisMac-$VERSION.dmg" >/dev/null
+hdiutil create -volname "AegisMac" -srcfolder dist/dmg-root -ov -format UDZO "dist/AegisMac-$VERSION.dmg" >/dev/null
 /bin/rm -rf dist/dmg-root
 
 echo "Built: dist/AegisMac-$VERSION.dmg (ad-hoc signed)"

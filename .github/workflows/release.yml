@@ -19,14 +19,23 @@ jobs:
       - name: Package DMG
         run: VERSION="${GITHUB_REF_NAME#v}" ./scripts/package.sh
 
-      # Created as a draft: review the generated notes, then publish from the
-      # Releases page. Release assets are permanent and don't count against
-      # the Actions artifact storage quota.
+      - name: Checksums
+        run: cd dist && shasum -a 256 AegisMac-*.dmg > SHA256SUMS.txt
+
+      # Created as a draft: review the notes, then publish from the Releases
+      # page. Uses docs/release-notes/<tag>.md when present, otherwise
+      # auto-generated notes. Release assets are permanent and don't count
+      # against the Actions artifact storage quota.
       - name: Create draft release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/AegisMac-*.dmg \
+          if [ -f "docs/release-notes/$GITHUB_REF_NAME.md" ]; then
+            notes="--notes-file docs/release-notes/$GITHUB_REF_NAME.md"
+          else
+            notes="--generate-notes"
+          fi
+          gh release create "$GITHUB_REF_NAME" dist/AegisMac-*.dmg dist/SHA256SUMS.txt \
             --title "AegisMac $GITHUB_REF_NAME" \
-            --generate-notes \
+            $notes \
             --draft
