@@ -60,6 +60,9 @@ extension AppState {
             for e in entries { addEntry(e) }
             return entries.count
         }
+        // Import is a merge: only entries are added, and the vault keeps its own
+        // encryption state (matching upstream). To encrypt a plaintext vault or
+        // change its password, use the Security settings.
         let vault = try ImportExport.importVaultFile(data: data, password: password)
         var count = 0
         for e in vault.entries { addEntry(e); count += 1 }

@@ -1,4 +1,5 @@
 import XCTest
+import AppKit
 @testable import AegisMac
 
 // Pure-logic tests for the UI layer: code grouping, hidden masking, search token matching,
@@ -371,5 +372,101 @@ final class UITests: XCTestCase {
         let f = p.getGroupFilter()
         XCTAssertTrue(f.uuids.contains(g))
         XCTAssertTrue(f.includeUngrouped)
+    }
+
+    // MARK: - Double-click to copy (native macOS affordance)
+
+    /// A double-click must copy the code even when the tap copy-behavior is the
+    /// default "Never" (so single clicks never copy). Regression for the reported
+    /// "double-click doesn't copy the 2FA code" bug.
+    @MainActor
+    func testDoubleTapCopiesCodeWhenCopyBehaviorNever() throws {
+        let prefs = freshPrefs()
+        prefs.copyBehavior = .never
+        let app = AppState(prefs: prefs)
+        XCTAssertEqual(app.copyBehavior, .never)
+
+        let info = try TotpInfo(secret: Data([1, 2, 3, 4, 5]), algorithm: "SHA1", digits: 6, period: 30)
+        let entry = VaultEntry(name: "acct", issuer: "Example", info: info)
+        let fixedTime: Int64 = 1_700_000_000
+        app.nowSeconds = fixedTime
+
+        let pb = NSPasteboard.general
+        pb.clearContents()
+
+        app.handleDoubleTap(entry)
+
+        let expected = try info.getOtp(time: fixedTime)
+        XCTAssertEqual(pb.string(forType: .string), expected, "double-click should copy the current code")
+        XCTAssertEqual(app.selectedEntry, entry.uuid)
+        XCTAssertEqual(app.copiedEntry, entry.uuid, "the Copied feedback should be shown")
+        XCTAssertEqual(prefs.getUsageCount(entry.uuid), 1, "copy should bump usage stats")
+    }
+
+    // MARK: - Lock behavior (window close vs. quit / system lock)
+
+    @MainActor
+    private func makeAppWithEncryptedVault(password: String) throws -> AppState {
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("aegis-lock-\(UUID().uuidString)", isDirectory: true)
+        let url = dir.appendingPathComponent("aegis.json")
+        addTeardownBlock { try? FileManager.default.removeItem(at: dir) }
+        let repo = try VaultRepository.createNew(password: password)
+        try repo.save(to: url)
+
+        let app = AppState(prefs: freshPrefs())
+        app.vaultURL = url
+        return app
+    }
+
+    /// Reopening the window (which re-fires `bootstrap`) must not re-lock an already
+    /// unlocked vault. Regression for "closing the window locks the vault".
+    @MainActor
+    func testReopeningWindowDoesNotRelockUnlockedVault() throws {
+        let app = try makeAppWithEncryptedVault(password: "pw")
+
+        app.bootstrap()
+        XCTAssertEqual(app.launchState, .locked)
+
+        try app.unlock(password: "pw")
+        app.stopTimer()
+        XCTAssertEqual(app.launchState, .unlocked)
+
+        // Simulate the window being closed and reopened.
+        app.bootstrap()
+        XCTAssertEqual(app.launchState, .unlocked, "reopening the window must not re-lock")
+    }
+
+    /// A system lock must lock an unlocked encrypted vault.
+    @MainActor
+    func testSystemLockLocksUnlockedVault() throws {
+        let app = try makeAppWithEncryptedVault(password: "pw")
+        app.bootstrap()
+        try app.unlock(password: "pw")
+        app.stopTimer()
+        XCTAssertEqual(app.launchState, .unlocked)
+
+        app.lockForSystemLock()
+        XCTAssertEqual(app.launchState, .locked, "system lock should lock the vault")
+    }
+
+    /// A plaintext vault has nothing to lock; a system lock leaves it unlocked.
+    @MainActor
+    func testSystemLockIsNoOpForPlaintextVault() throws {
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("aegis-lock-\(UUID().uuidString)", isDirectory: true)
+        let url = dir.appendingPathComponent("aegis.json")
+        addTeardownBlock { try? FileManager.default.removeItem(at: dir) }
+        let repo = try VaultRepository.createNew(password: nil)
+        try repo.save(to: url)
+
+        let app = AppState(prefs: freshPrefs())
+        app.vaultURL = url
+        app.bootstrap()
+        app.stopTimer()
+        XCTAssertEqual(app.launchState, .unlocked)
+
+        app.lockForSystemLock()
+        XCTAssertEqual(app.launchState, .unlocked, "a plaintext vault should not lock")
     }
 }

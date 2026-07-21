@@ -2,11 +2,11 @@
 # Build a release .app bundle and .dmg into dist/.
 #
 # Usage: scripts/package.sh
-#   VERSION=x.y.z   override the version (default 0.1.0)
+#   VERSION=x.y.z   override the version (default 0.1.1)
 set -e
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-VERSION="${VERSION:-0.1.0}"
+VERSION="${VERSION:-0.1.1}"
 cd "$ROOT"
 
 swift build -c release

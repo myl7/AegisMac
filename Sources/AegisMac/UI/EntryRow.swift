@@ -89,6 +89,9 @@ struct EntryRow: View {
         .overlay(alignment: .bottom) { perCardProgress }
         .clipShape(RoundedCornersShape(radius: 12, roundTop: roundTop, roundBottom: roundBottom))
         .contentShape(Rectangle())
+        // Double-click copies the code directly (native macOS affordance); a single
+        // click keeps the Android-ported tap behavior (select / reveal / copy pref).
+        .onTapGesture(count: 2) { app.handleDoubleTap(entry) }
         .onTapGesture { app.handleTap(entry) }
         .contextMenu { contextMenu }
     }

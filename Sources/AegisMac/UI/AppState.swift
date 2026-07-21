@@ -92,6 +92,7 @@ final class AppState: ObservableObject {
     @Published var errorMessage: String?
 
     private var timer: Timer?
+    private var systemLockObserver: NSObjectProtocol?
 
     var vaultURL: URL = VaultRepository.defaultVaultURL
 
@@ -111,11 +112,39 @@ final class AppState: ObservableObject {
         let f = prefs.getGroupFilter()
         self.groupFilter = f.uuids
         self.filterIncludesUngrouped = f.includeUngrouped
+        observeSystemLock()
+    }
+
+    /// Lock an unlocked vault when the macOS session locks (screen lock / lock
+    /// screen). App quit needs no handling — the on-disk vault is always encrypted,
+    /// so the next launch starts locked. Closing the window does not lock.
+    private func observeSystemLock() {
+        systemLockObserver = DistributedNotificationCenter.default().addObserver(
+            forName: NSNotification.Name("com.apple.screenIsLocked"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.lockForSystemLock() }
+        }
+    }
+
+    /// Lock the vault in response to a system lock, if it is currently unlocked and
+    /// encrypted (a plaintext vault has nothing to lock).
+    func lockForSystemLock() {
+        guard isEncrypted, case .unlocked = launchState else { return }
+        lock()
     }
 
     // MARK: Bootstrap
 
     func bootstrap() {
+        // Run the initial load only once. Reopening the window re-fires
+        // RootView.onAppear; without this guard an already-open (unlocked) vault
+        // would re-lock just because its window was closed and reopened, even though
+        // the app never quit. Locking happens on quit (the on-disk vault is always
+        // encrypted) and on system lock — not on window close.
+        guard case .loading = launchState else { return }
+
         if !VaultRepository.fileExists(at: vaultURL) {
             launchState = prefs.introDone ? .onboarding : .onboarding
             return
@@ -145,10 +174,11 @@ final class AppState: ObservableObject {
         startTimer()
     }
 
-    /// Touch ID unlock: retrieve the biometric-protected password from the keychain and unlock.
-    /// Uses only the password unlock path (contract API); no biometric vault slot is used.
-    func unlockWithTouchID() throws {
-        guard let data = KeychainHelper.retrieveSecret(),
+    /// Touch ID unlock: prompt for biometrics, retrieve the stored password from the
+    /// keychain, and unlock. Uses only the password unlock path (contract API); no
+    /// biometric vault slot is used.
+    func unlockWithTouchID() async throws {
+        guard let data = await KeychainHelper.retrieveSecret(),
               let password = String(data: data, encoding: .utf8) else {
             throw AegisError.crypto("Touch ID unlock was cancelled or unavailable")
         }
@@ -170,6 +200,37 @@ final class AppState: ObservableObject {
 
     var touchIDAvailable: Bool {
         prefs.touchIDEnabled && KeychainHelper.hasStoredKey() && KeychainHelper.biometricsAvailable()
+    }
+
+    // MARK: Vault encryption / password (mirrors upstream SecurityPreferencesFragment)
+
+    /// Encrypt a plaintext vault with `password`, then persist it. After this the
+    /// vault is password-protected and Touch ID can be enabled.
+    func setVaultPassword(_ password: String) throws {
+        guard let repo = repository else { throw AegisError.vault("Vault not open") }
+        try repo.enableEncryption(password: password)
+        try repo.save(to: vaultURL)
+        objectWillChange.send()
+    }
+
+    /// Change the master password of an encrypted vault. Any Touch ID entry is
+    /// cleared because it stored the previous password; re-enable it afterward.
+    func changeVaultPassword(_ newPassword: String) throws {
+        guard let repo = repository else { throw AegisError.vault("Vault not open") }
+        try repo.changePassword(newPassword: newPassword)
+        try repo.save(to: vaultURL)
+        if prefs.touchIDEnabled { disableTouchID() }
+        objectWillChange.send()
+    }
+
+    /// Remove the password from an encrypted vault, turning it back into plaintext.
+    /// Any Touch ID entry is cleared.
+    func removeVaultPassword() throws {
+        guard let repo = repository else { throw AegisError.vault("Vault not open") }
+        repo.disableEncryption()
+        try repo.save(to: vaultURL)
+        if prefs.touchIDEnabled { disableTouchID() }
+        objectWillChange.send()
     }
 
     /// Create a brand-new vault (password = nil → plaintext) and open it.
@@ -385,6 +446,16 @@ final class AppState: ObservableObject {
                 }
             }
         }
+    }
+
+    /// Native macOS double-click on a row: always copy the code (and reveal it when
+    /// tap-to-reveal is on), independent of the tap copy-behavior preference. macOS
+    /// users expect a double-click to act, so this works even when copy-behavior is
+    /// "Never" or "Double tap".
+    func handleDoubleTap(_ entry: VaultEntry) {
+        selectedEntry = entry.uuid
+        if tapToReveal { reveal(entry) }
+        copyCode(entry)
     }
 
     func reveal(_ entry: VaultEntry) {

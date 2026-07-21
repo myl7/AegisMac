@@ -6,7 +6,10 @@ import Foundation
 /// `GoogleAuthUriImporter` / `VaultRepository.exportGoogleUris`.
 enum ImportExport {
 
-    /// Reads an Aegis `.json` vault file and returns its decoded `Vault`.
+    /// Reads an Aegis `.json` vault file and returns its decoded `Vault`. Only the
+    /// entries are imported (a merge); the source file's encryption credentials are
+    /// intentionally discarded, matching upstream `ImportEntriesActivity`. Vault
+    /// encryption is managed separately in the Security settings.
     /// - `password`: required when the file is encrypted; ignored for plaintext.
     static func importVaultFile(data: Data, password: String?) throws -> Vault {
         let file = try VaultFile.fromData(data)

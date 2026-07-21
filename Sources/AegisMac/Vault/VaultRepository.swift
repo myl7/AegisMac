@@ -25,6 +25,39 @@ final class VaultRepository {
         self.credentials = credentials
     }
 
+    // MARK: Encryption management (mirrors upstream VaultManager / SecurityPreferencesFragment)
+
+    /// Encrypts a currently-plaintext vault, protecting it with `password`. A fresh
+    /// master key is generated and wrapped by a new password slot (upstream
+    /// `EnableEncryptionListener` + `new VaultFileCredentials()`). No-op if the
+    /// vault is already encrypted.
+    func enableEncryption(password: String) throws {
+        guard credentials == nil else { return }
+        let masterKey = MasterKey.generate()
+        let slot = try PasswordSlot.create(password: password, masterKey: masterKey)
+        credentials = VaultFileCredentials(slots: SlotList(slots: [slot]), masterKey: masterKey)
+    }
+
+    /// Turns an encrypted vault back into plaintext (upstream `disableEncryption`).
+    func disableEncryption() {
+        credentials = nil
+    }
+
+    /// Changes the master password of an already-encrypted vault. A new password
+    /// slot wraps the **same** master key and the old regular password slot(s) are
+    /// removed; backup and any other slots are left untouched (upstream
+    /// `SetPasswordListener`). Throws if the vault is not encrypted.
+    func changePassword(newPassword: String) throws {
+        guard let creds = credentials else {
+            throw AegisError.vault("vault is not encrypted")
+        }
+        let newSlot = try PasswordSlot.create(password: newPassword, masterKey: creds.masterKey)
+        var slots = creds.slots.slots
+        slots.removeAll { ($0 as? PasswordSlot).map { !$0.isBackup } == true }
+        slots.append(newSlot)
+        credentials = VaultFileCredentials(slots: SlotList(slots: slots), masterKey: creds.masterKey)
+    }
+
     // MARK: Loading
 
     static func fileExists(at url: URL) -> Bool {

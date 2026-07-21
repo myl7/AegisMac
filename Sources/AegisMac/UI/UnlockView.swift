@@ -9,6 +9,7 @@ struct UnlockView: View {
 
     @State private var password = ""
     @State private var error: String?
+    @State private var didAutoPrompt = false
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -46,7 +47,16 @@ struct UnlockView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(palette.backgroundColor)
-        .onAppear { focused = true }
+        .onAppear {
+            focused = true
+            // Start the Touch ID prompt automatically the first time the unlock
+            // screen appears, so the user doesn't have to click "Use Touch ID".
+            // Cancelling falls back to the password field / the button.
+            if app.touchIDAvailable && !didAutoPrompt {
+                didAutoPrompt = true
+                unlockTouchID()
+            }
+        }
     }
 
     private func unlock() {
@@ -60,10 +70,12 @@ struct UnlockView: View {
 
     private func unlockTouchID() {
         error = nil
-        do {
-            try app.unlockWithTouchID()
-        } catch {
-            self.error = (error as? AegisError)?.errorDescription ?? error.localizedDescription
+        Task { @MainActor in
+            do {
+                try await app.unlockWithTouchID()
+            } catch {
+                self.error = (error as? AegisError)?.errorDescription ?? error.localizedDescription
+            }
         }
     }
 }

@@ -19,6 +19,15 @@ struct SettingsView: View {
     @State private var touchIDPassword = ""
     @State private var touchIDError: String?
 
+    // Vault password (set / change) + remove-encryption confirm
+    private enum PasswordMode { case set, change }
+    @State private var passwordMode: PasswordMode = .set
+    @State private var showSetPasswordSheet = false
+    @State private var newPassword = ""
+    @State private var confirmPassword = ""
+    @State private var passwordError: String?
+    @State private var showRemovePasswordConfirm = false
+
     // Import / export
     @State private var showImportSheet = false
     @State private var showEncryptExportPrompt = false
@@ -107,28 +116,43 @@ struct SettingsView: View {
 
     private var securityTab: some View {
         Form {
-            Toggle("Unlock with Touch ID", isOn: Binding(
-                get: { touchIDEnabled },
-                set: { on in
-                    if on {
-                        if KeychainHelper.biometricsAvailable() {
-                            showTouchIDPrompt = true
-                        } else {
-                            touchIDError = "Touch ID is not available on this Mac"
-                        }
-                    } else {
-                        app.disableTouchID()
-                        touchIDEnabled = false
-                    }
+            Section("Encryption") {
+                if app.isEncrypted {
+                    Text("This vault is password-protected.")
+                        .font(.caption).foregroundColor(palette.onSurfaceDimColor)
+                    Button("Change password…") { presentPasswordSheet(.change) }
+                    Button("Remove password…", role: .destructive) { showRemovePasswordConfirm = true }
+                } else {
+                    Text("This vault is not encrypted. Set a password to protect it and to use Touch ID.")
+                        .font(.caption).foregroundColor(palette.onSurfaceDimColor)
+                    Button("Set password…") { presentPasswordSheet(.set) }
                 }
-            ))
-            .disabled(!app.isEncrypted)
-            if !app.isEncrypted {
-                Text("Touch ID is only available for password-protected vaults.")
-                    .font(.caption).foregroundColor(palette.onSurfaceDimColor)
             }
-            if let touchIDError = touchIDError {
-                Text(touchIDError).foregroundColor(palette.errorColor).font(.caption)
+
+            Section("Touch ID") {
+                Toggle("Unlock with Touch ID", isOn: Binding(
+                    get: { touchIDEnabled },
+                    set: { on in
+                        if on {
+                            if KeychainHelper.biometricsAvailable() {
+                                showTouchIDPrompt = true
+                            } else {
+                                touchIDError = "Touch ID is not available on this Mac"
+                            }
+                        } else {
+                            app.disableTouchID()
+                            touchIDEnabled = false
+                        }
+                    }
+                ))
+                .disabled(!app.isEncrypted)
+                if !app.isEncrypted {
+                    Text("Touch ID is only available for password-protected vaults.")
+                        .font(.caption).foregroundColor(palette.onSurfaceDimColor)
+                }
+                if let touchIDError = touchIDError {
+                    Text(touchIDError).foregroundColor(palette.errorColor).font(.caption)
+                }
             }
         }
         .padding()
@@ -141,11 +165,74 @@ struct SettingsView: View {
                                     touchIDEnabled = true
                                     touchIDError = nil
                                 } else {
-                                    touchIDError = "Could not store the key in the keychain"
+                                    touchIDError = "Could not store the key in the keychain: \(KeychainHelper.lastStoreErrorMessage())"
                                 }
                                 touchIDPassword = ""
                                 showTouchIDPrompt = false
                            })
+        }
+        .sheet(isPresented: $showSetPasswordSheet) { setPasswordSheet }
+        .alert("Remove password?", isPresented: $showRemovePasswordConfirm) {
+            Button("Cancel", role: .cancel) {}
+            Button("Remove", role: .destructive) {
+                do {
+                    try app.removeVaultPassword()
+                    touchIDEnabled = false
+                    touchIDError = nil
+                } catch { touchIDError = errorText(error) }
+            }
+        } message: {
+            Text("The vault will be stored unencrypted on disk, and Touch ID will be turned off.")
+        }
+    }
+
+    private func presentPasswordSheet(_ mode: PasswordMode) {
+        passwordMode = mode
+        newPassword = ""
+        confirmPassword = ""
+        passwordError = nil
+        showSetPasswordSheet = true
+    }
+
+    // Set-password / change-password sheet (password + confirmation).
+    private var setPasswordSheet: some View {
+        VStack(spacing: 16) {
+            Text(passwordMode == .set ? "Set vault password" : "Change vault password").font(.headline)
+            SecureField("New password", text: $newPassword)
+                .textFieldStyle(.roundedBorder).frame(width: 240)
+            SecureField("Confirm password", text: $confirmPassword)
+                .textFieldStyle(.roundedBorder).frame(width: 240)
+                .onSubmit(submitPassword)
+            if let passwordError = passwordError {
+                Text(passwordError).foregroundColor(palette.errorColor).font(.caption)
+            }
+            HStack {
+                Button("Cancel") { showSetPasswordSheet = false }
+                Button("OK", action: submitPassword)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(newPassword.isEmpty)
+            }
+        }
+        .padding(24)
+        .frame(width: 320)
+    }
+
+    private func submitPassword() {
+        guard !newPassword.isEmpty else { passwordError = "Password required"; return }
+        guard newPassword == confirmPassword else { passwordError = "Passwords do not match"; return }
+        do {
+            switch passwordMode {
+            case .set:
+                try app.setVaultPassword(newPassword)
+            case .change:
+                try app.changeVaultPassword(newPassword)
+                touchIDEnabled = false   // Touch ID was cleared; it stored the old password
+            }
+            actionMessage = nil
+            showSetPasswordSheet = false
+            newPassword = ""; confirmPassword = ""; passwordError = nil
+        } catch {
+            passwordError = errorText(error)
         }
     }
 
@@ -238,7 +325,7 @@ struct SettingsView: View {
                             if let url = pendingImportURL {
                                 do {
                                     let n = try app.importVaultOrUriFile(url: url, password: importPassword)
-                                    actionMessage = "Imported \(n) entries."
+                                    actionMessage = "Imported \(n) \(n == 1 ? "entry" : "entries")."
                                 } catch { actionMessage = errorText(error) }
                             }
                             showImportSheet = false; importPassword = ""; pendingImportURL = nil

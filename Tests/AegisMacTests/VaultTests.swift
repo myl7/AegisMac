@@ -449,4 +449,82 @@ final class VaultTests: XCTestCase {
         let reopened = try VaultRepository.loadPlain(file: file)
         XCTAssertEqual(reopened.vault.entries.count, 1)
     }
+
+    // MARK: - Encryption management (set / change / remove password)
+
+    private func totpEntry(_ name: String = "acct") throws -> VaultEntry {
+        VaultEntry(name: name, issuer: "Svc",
+                   info: try TotpInfo(secret: Base32.decode("4SJHB4GSD43FZBAI7C2HLRJGPQ")))
+    }
+
+    private func saveReload(_ repo: VaultRepository) throws -> VaultFile {
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("aegis-enc-\(UUID().uuidString)", isDirectory: true)
+        let url = dir.appendingPathComponent("aegis.json")
+        addTeardownBlock { try? FileManager.default.removeItem(at: dir) }
+        try repo.save(to: url)
+        return try VaultRepository.loadFile(at: url)
+    }
+
+    /// Encrypting a plaintext vault: the on-disk file becomes encrypted and unlocks
+    /// with the chosen password. Mirrors upstream `enableEncryption`.
+    func testEnableEncryptionOnPlaintextVault() throws {
+        let repo = try VaultRepository.createNew(password: nil)
+        try repo.addEntry(totpEntry())
+        XCTAssertFalse(repo.isEncrypted)
+
+        try repo.enableEncryption(password: "secret")
+        XCTAssertTrue(repo.isEncrypted)
+
+        let file = try saveReload(repo)
+        XCTAssertTrue(file.isEncrypted)
+        let reopened = try VaultRepository.unlock(file: file, password: "secret")
+        XCTAssertEqual(reopened.vault.entries.count, 1)
+    }
+
+    func testEnableEncryptionIsNoOpWhenAlreadyEncrypted() throws {
+        let repo = try VaultRepository.createNew(password: "original")
+        try repo.enableEncryption(password: "ignored")
+        // The original password still works; the second call did nothing.
+        let file = try saveReload(repo)
+        XCTAssertNoThrow(try VaultRepository.unlock(file: file, password: "original"))
+        XCTAssertThrowsError(try VaultRepository.unlock(file: file, password: "ignored"))
+    }
+
+    /// Changing the password keeps the same master key (entries stay readable) but
+    /// only the new password unlocks. Mirrors upstream `SetPasswordListener`.
+    func testChangePasswordReencryptsWithNewPasswordOnly() throws {
+        let repo = try VaultRepository.createNew(password: "old")
+        let entry = try totpEntry()
+        try repo.addEntry(entry)
+
+        try repo.changePassword(newPassword: "new")
+
+        let file = try saveReload(repo)
+        XCTAssertTrue(file.isEncrypted)
+        XCTAssertThrowsError(try VaultRepository.unlock(file: file, password: "old"))
+        let reopened = try VaultRepository.unlock(file: file, password: "new")
+        XCTAssertEqual(reopened.vault.entries.count, 1)
+        XCTAssertTrue(try XCTUnwrap(reopened.vault.entries.first).equivalates(entry))
+    }
+
+    func testChangePasswordThrowsWhenPlaintext() throws {
+        let repo = try VaultRepository.createNew(password: nil)
+        XCTAssertThrowsError(try repo.changePassword(newPassword: "new"))
+    }
+
+    /// Removing the password turns the vault back into plaintext on disk.
+    func testDisableEncryption() throws {
+        let repo = try VaultRepository.createNew(password: "pw")
+        try repo.addEntry(totpEntry())
+        XCTAssertTrue(repo.isEncrypted)
+
+        repo.disableEncryption()
+        XCTAssertFalse(repo.isEncrypted)
+
+        let file = try saveReload(repo)
+        XCTAssertFalse(file.isEncrypted)
+        let reopened = try VaultRepository.loadPlain(file: file)
+        XCTAssertEqual(reopened.vault.entries.count, 1)
+    }
 }
